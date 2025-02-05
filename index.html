@@ -1,0 +1,362 @@
+function doGet(e) {
+  if (!e.parameter.id) {
+    return HtmlService.createHtmlOutput('Error: ID de cliente no proporcionado.');
+  }
+
+
+  var idCliente = e.parameter.id;
+  var cliente = obtenerClientePorId(idCliente); // Llamada a la nueva función
+
+
+  if (!cliente) {
+    return HtmlService.createHtmlOutput('Cliente no encontrado.');
+  }
+
+
+  var premios = cliente[4] ? cliente[4].split(',') : [];
+  var premiosDetallesJSON = obtenerPremiosDetallesJSON();
+
+
+  var html = `<!DOCTYPE html>
+  <html>
+    <head>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background-color: #f5f5f5;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .card {
+          background-color: #ffffff;
+          padding: 20px;
+          border-radius: 10px;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          max-width: 600px;
+          width: 100%;
+          text-align: center;
+        }
+        ul {
+          list-style: none;
+          padding: 0;
+        }
+        ul li {
+          margin: 10px 0;
+          padding: 10px;
+          background-color: #28a745;
+          color: white;
+          border-radius: 5px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
+        ul li:hover {
+          background-color: #218838;
+        }
+        .modal, .confirm-modal {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          justify-content: center;
+          align-items: center;
+        }
+        .modal-content, .confirm-modal-content {
+          background-color: white;
+          padding: 20px;
+          border-radius: 10px;
+          text-align: center;
+          position: relative;
+          width: 90%;
+          max-width: 500px;
+        }
+        .close {
+          cursor: pointer;
+          color: red;
+          font-weight: bold;
+          font-size: 48px;
+          position: absolute;
+          top: 10px;
+          right: 10px;
+        }
+        .close:hover {
+          color: #cc0000;
+        }
+        .request-button {
+          display: inline-block;
+          padding: 12px 24px;
+          background-color: #28a745;
+          color: white;
+          text-decoration: none;
+          border: none;
+          border-radius: 5px;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background-color 0.3s ease, transform 0.2s ease;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .request-button:hover {
+          background-color: #218838;
+          transform: translateY(-2px);
+          box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+        .request-button:active {
+          transform: translateY(0);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .confirm-button, .cancel-button {
+          padding: 10px 20px;
+          margin: 10px;
+          border: none;
+          border-radius: 5px;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
+        .confirm-button {
+          background-color: #28a745;
+          color: white;
+        }
+        .confirm-button:hover {
+          background-color: #218838;
+        }
+        .cancel-button {
+          background-color: #dc3545;
+          color: white;
+        }
+        .cancel-button:hover {
+          background-color: #c82333;
+        }
+      </style>
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    </head>
+    <body>
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="https://i.imgur.com/7nobr7A.png" alt="Logo" style="max-width: 100px; height: auto;">
+      </div>
+      <div class="card" id="clienteCard">
+        <h1>Tarjeta Cliente</h1>
+        <h2>Cliente: ${cliente[1]}</h2>
+        <p>ID: ${cliente[0]}</p>
+        <p>Puntos: <span id="clientePuntos">${cliente[3]}</span></p>
+        <h3>Premios Desbloqueados:</h3>
+        <ul id="premiosList">
+          ${premios.map(premio => `<li>${premio}</li>`).join('')}
+        </ul>
+      </div>
+
+
+      <div id="detailsModal" class="modal">
+        <div class="modal-content">
+          <span class="close" onclick="closeDetailsModal()">×</span>
+          <h3 id="premioTitulo">Premio</h3>
+          <p id="premioDescripcion"></p>
+          <a id="requestButton" href="#" class="request-button" onclick="openConfirmModal(event)">Solicitar Premio</a>
+        </div>
+      </div>
+
+
+      <div id="confirmModal" class="confirm-modal">
+        <div class="confirm-modal-content">
+          <h3>¿Desea canjear este premio?</h3>
+          <p id="puntosRequeridosTexto"></p>
+          <div class="button-container">
+            <button class="confirm-button" onclick="confirmRedemption()">Sí</button>
+            <button class="cancel-button" onclick="closeConfirmModal()">No</button>
+          </div>
+        </div>
+      </div>
+
+
+      <script>
+        var premiosDetalles = ${premiosDetallesJSON};
+        var premioSeleccionado = "";
+        var puntosRequeridos = 0;
+
+
+        document.getElementById('premiosList').addEventListener('click', function(event) {
+          if (event.target.tagName === 'LI') {
+            premioSeleccionado = event.target.textContent.trim();
+            if (premiosDetalles[premioSeleccionado]) {
+              document.getElementById('premioTitulo').textContent = premioSeleccionado;
+              document.getElementById('premioDescripcion').innerHTML = premiosDetalles[premioSeleccionado].descripcion.replace(
+                /(https?:\\/\\/[^\\s]+)/g,
+                '<a href="$1" target="_blank">$1</a>'
+              );
+              puntosRequeridos = premiosDetalles[premioSeleccionado].puntos;
+              document.getElementById('detailsModal').style.display = 'flex';
+            }
+          }
+        });
+
+
+        function openConfirmModal(event) {
+          event.preventDefault();
+          document.getElementById('puntosRequeridosTexto').innerText = "Este premio requiere " + puntosRequeridos + " puntos.";
+          document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+
+        function closeConfirmModal() {
+          document.getElementById('confirmModal').style.display = 'none';
+        }
+
+
+        function closeDetailsModal() {
+          document.getElementById('detailsModal').style.display = 'none';
+        }
+
+
+        function confirmRedemption() {
+          closeConfirmModal();
+          google.script.run.withSuccessHandler(function(response) {
+            if (response === "Canje exitoso.") {
+              Swal.fire({
+                icon: 'success',
+                title: '¡Éxito!',
+                text: 'Canje realizado con éxito. Se descontarán los puntos correspondientes.',
+                confirmButtonText: 'Aceptar'
+              }).then(() => {
+                closeDetailsModal();
+                window.open('https://wa.me/50670178857?text=Hola, me gustaría solicitar el premio "' + encodeURIComponent(premioSeleccionado) + '".', '_blank');
+                actualizarInterfaz();
+              });
+            } else {
+              Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: response,
+                confirmButtonText: 'Aceptar'
+              });
+            }
+          }).registrarCanje("${idCliente}", premioSeleccionado, puntosRequeridos);
+        }
+
+
+        function actualizarInterfaz() {
+          var nuevosPuntos = parseInt(document.getElementById('clientePuntos').textContent) - puntosRequeridos;
+          document.getElementById('clientePuntos').textContent = nuevosPuntos;
+
+
+          google.script.run.withSuccessHandler(function(updatedPremios) {
+            var nuevosPremios = document.getElementById('premiosList');
+            nuevosPremios.innerHTML = '';
+            updatedPremios.forEach(function(premio) {
+              var nuevoPremio = document.createElement('li');
+              nuevoPremio.textContent = premio;
+              nuevosPremios.appendChild(nuevoPremio);
+            });
+          }).obtenerPremiosCliente("${idCliente}");
+        }
+      </script>
+    </body>
+  </html>
+  `;
+
+
+  return HtmlService.createHtmlOutput(html);
+}
+
+
+function obtenerClientePorId(idCliente) {
+  var cache = CacheService.getScriptCache();
+  var cachedData = cache.get(idCliente);
+
+
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+
+
+  var hojaClientes = SpreadsheetApp.openById('1MDk8fD0eSqV-UCyZcGAuNs5JtxzGVVcptZwyob8tLd0').getSheetByName('Filtro Cliente');
+  var numFilas = hojaClientes.getLastRow();
+  var rangoClientes = hojaClientes.getRange(2, 1, numFilas - 1, hojaClientes.getLastColumn());
+  var datosClientes = rangoClientes.getValues();
+
+
+  for (var i = 0; i < datosClientes.length; i++) {
+    if (datosClientes[i][0] == idCliente) {
+      cache.put(idCliente, JSON.stringify(datosClientes[i]), 30);
+      return datosClientes[i];
+    }
+  }
+
+
+  return null;
+}
+
+
+function obtenerPremiosDetallesJSON() {
+  var hojaPremios = SpreadsheetApp.openById('1MDk8fD0eSqV-UCyZcGAuNs5JtxzGVVcptZwyob8tLd0').getSheetByName('Premios');
+  var datosPremios = hojaPremios.getDataRange().getValues();
+
+
+  return JSON.stringify(datosPremios.reduce(function(acc, row) {
+    acc[row[1]] = { descripcion: row[2], puntos: row[0] };
+    return acc;
+  }, {}));
+}
+
+
+function registrarCanje(idCliente, premio, puntos) {
+  var hojaClientes = SpreadsheetApp.openById('1MDk8fD0eSqV-UCyZcGAuNs5JtxzGVVcptZwyob8tLd0').getSheetByName('Filtro Cliente');
+  var hojaCanjeos = SpreadsheetApp.openById('1MDk8fD0eSqV-UCyZcGAuNs5JtxzGVVcptZwyob8tLd0').getSheetByName('Canjeos');
+
+
+  var datosClientes = hojaClientes.getDataRange().getValues();
+  var cliente = null;
+
+
+  for (var i = 1; i < datosClientes.length; i++) {
+    if (datosClientes[i][0] == idCliente) {
+      cliente = datosClientes[i];
+      break;
+    }
+  }
+
+
+  if (!cliente) {
+    return 'Cliente no encontrado.';
+  }
+
+
+  var nombreCliente = cliente[1];
+  var puntosCliente = parseInt(cliente[3]);
+
+
+  if (puntosCliente < puntos) {
+    return 'No tienes suficientes puntos para este premio.';
+  }
+
+
+  hojaCanjeos.appendRow([idCliente, nombreCliente, premio, puntos, new Date()]);
+  return 'Canje exitoso.';
+}
+
+
+function obtenerPremiosCliente(idCliente) {
+  var hojaClientes = SpreadsheetApp.openById('1MDk8fD0eSqV-UCyZcGAuNs5JtxzGVVcptZwyob8tLd0').getSheetByName('Filtro Cliente');
+  var datosClientes = hojaClientes.getDataRange().getValues();
+  var cliente = null;
+
+
+  for (var i = 1; i < datosClientes.length; i++) {
+    if (datosClientes[i][0] == idCliente) {
+      cliente = datosClientes[i];
+      break;
+    }
+  }
+
+
+  if (!cliente) {
+    return [];
+  }
+
+
+  return cliente[4] ? cliente[4].split(',') : [];
+}
